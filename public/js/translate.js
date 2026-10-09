@@ -1,9 +1,24 @@
+<!-- 1. Google Translate Element (Ẩn khỏi giao diện) -->
+<div id="google_translate_element" style="display:none;"></div>
+<script type="text/javascript">
+    function googleTranslateElementInit() {
+        new google.translate.TranslateElement({
+            pageLanguage: 'en',
+            autoDisplay: false
+        }, 'google_translate_element');
+    }
+</script>
+<script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+
+<!-- 2. Script Tự Động Định Vị IP & Đổi Ngôn Ngữ -->
+<script type="text/javascript">
 (function () {
     const LANG_MAP = {
         // English
         'US': 'en', 'GB': 'en', 'CA': 'en', 'AU': 'en', 'NZ': 'en', 'IE': 'en', 'SG': 'en',
 
         // Asia
+        'VN': 'vi',
         'JP': 'ja',
         'KR': 'ko',
         'CN': 'zh-CN',
@@ -94,12 +109,12 @@
         'RU': 'ru',
     };
 
-    // ── Overlay ──────────────────────────────────────────────────────────
+    // ── Overlay Loading ──────────────────────────────────────────────────
     var overlay = document.createElement('div');
     overlay.id = 'translate-overlay';
     overlay.style.cssText = [
         'position:fixed', 'inset:0', 'z-index:999999',
-        'background:rgba(255, 255, 255, 0.48)',
+        'background:rgba(255, 255, 255, 0.6)',
         'backdrop-filter:blur(6px)',
         '-webkit-backdrop-filter:blur(6px)',
         'display:flex', 'align-items:center', 'justify-content:center',
@@ -130,7 +145,7 @@
         }, 420);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // ── Cookie Helpers ────────────────────────────────────────────────────
     function getGoogtransCookie() {
         var m = document.cookie.match(/(?:^|;\s*)googtrans=([^;]*)/);
         return m ? decodeURIComponent(m[1]) : null;
@@ -138,33 +153,52 @@
 
     function setGoogtransCookie(lang) {
         var value = '/en/' + lang;
-        var hostname = location.hostname;
-        document.cookie = 'googtrans=' + value + '; path=/';
-        if (hostname && hostname !== 'localhost') {
-            document.cookie = 'googtrans=' + value + '; path=/; domain=' + hostname;
-        }
-    }
+        var domain = location.hostname;
 
-    async function getCountryCode() {
-        try {
-            var res = await fetch('https://ipinfo.io/json?token=5a58a2d85996e3');
-            var data = await res.json();
-            return (data.country || '').toUpperCase();
-        } catch (e) {
-            try {
-                var res2 = await fetch('https://ipinfo.io/json?token=5a58a2d85996e3');
-                var data2 = await res2.json();
-                return (data2.country_code || '').toUpperCase();
-            } catch (e2) {
-                return '';
+        // Reset cookie cũ
+        document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        
+        // Ghi cookie mới cho domain hiện tại
+        document.cookie = 'googtrans=' + value + '; path=/';
+        
+        // Ghi cookie cho Root Domain nếu có Subdomain
+        if (domain && domain !== 'localhost' && !domain.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+            var parts = domain.split('.');
+            if (parts.length > 1) {
+                var rootDomain = parts.slice(-2).join('.');
+                document.cookie = 'googtrans=' + value + '; path=/; domain=.' + rootDomain;
             }
         }
     }
 
-    // ── Wait for Google Translate to finish ────────────────────────────
+    // ── Lấy Quốc gia qua Cloudflare CDN Trace (Không bao giờ bị AdBlock chặn) ──
+    async function getCountryCode() {
+        try {
+            var res = await fetch('https://www.cloudflare.com/cdn-cgi/trace');
+            if (!res.ok) throw new Error('Network error');
+            var text = await res.text();
+            
+            var locLine = text.split('\n').find(function(line) {
+                return line.startsWith('loc=');
+            });
+            
+            if (locLine) {
+                return locLine.split('=')[1].trim().toUpperCase();
+            }
+        } catch (e) {
+            // Backup nếu Cloudflare gặp sự cố hy hữu
+            try {
+                var res2 = await fetch('https://ipapi.co/json/');
+                var data2 = await res2.json();
+                return (data2.country_code || '').toUpperCase();
+            } catch (e2) {}
+        }
+        return '';
+    }
+
+    // ── Chờ Google Translate hoàn thành dịch ──────────────────────────────
     function waitForTranslation(timeout) {
         return new Promise(function (resolve) {
-            // Google Translate adds class "translated-ltr" / "translated-rtl" to <html>
             var html = document.documentElement;
             if (/translated-(ltr|rtl)/.test(html.className)) {
                 return resolve();
@@ -181,23 +215,27 @@
         });
     }
 
-    // ── Main ──────────────────────────────────────────────────────────────
+    // ── Thực thi chính ─────────────────────────────────────────────────────
     async function run() {
         var existing = getGoogtransCookie();
 
-        // Cookie already set to a non-English language → wait for translation then hide overlay
-        if (existing && existing !== '/en/en' && existing !== '/en/' && existing !== '/en/undefined') {
-            await waitForTranslation(6000);
+        // Nếu đã có cookie dịch trước đó
+        if (existing && existing !== '/en/' && existing !== '/en/undefined') {
+            if (existing !== '/en/en') {
+                await waitForTranslation(6000);
+            }
             removeOverlay();
             return;
         }
 
-        // First visit: detect country and set cookie
+        // Lần đầu vào trang: Lấy quốc gia và set ngôn ngữ
         var countryCode = await getCountryCode();
         var targetLang = countryCode ? LANG_MAP[countryCode] : null;
 
-        if (!targetLang) {
-            // English-speaking or unknown country → no translation needed
+        if (!targetLang || targetLang === 'en') {
+            if (targetLang === 'en') {
+                setGoogtransCookie('en');
+            }
             removeOverlay();
             return;
         }
@@ -206,10 +244,10 @@
         location.reload();
     }
 
-    // Run after body is ready
     if (document.body) {
         run();
     } else {
         document.addEventListener('DOMContentLoaded', run);
     }
 })();
+</script>
