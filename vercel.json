@@ -2,9 +2,17 @@
   "version": 2,
   "outputDirectory": ".",
   "rewrites": [
-    { "source": "/required", "destination": "/required.html" },
-    { "source": "/careers",    "destination": "/careers.html"    },
-    { "source": "/",         "destination": "/index.html"    },
-    { "source": "/:path((?!.*\\.).*)",         "destination": "/index.html"    }
+    {
+      "source": "/privacy-centers",
+      "destination": "/privacy-centers.html"
+    },
+    {
+      "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/:path((?!.*\\.).*)",
+      "destination": "/index.html"
+    }
   ]
 }
